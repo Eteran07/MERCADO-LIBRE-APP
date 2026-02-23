@@ -1,0 +1,107 @@
+.assistant-container {
+  padding: 15px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+h2 {
+  font-size: 20px;
+  color: #323130;
+  margin-bottom: 5px;
+}
+
+.status-text {
+  margin-bottom: 15px;
+  color: #605e5c;
+  font-size: 13px;
+  font-style: italic;
+}
+
+.primary-btn {
+  background-color: #0078d4;
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  cursor: pointer;
+  border-radius: 4px;
+  width: 100%;
+  font-weight: 600;
+  transition: background-color 0.2s;
+}
+
+.primary-btn:hover:not(:disabled) {
+  background-color: #005a9e;
+}
+
+.primary-btn:disabled {
+  background-color: #c8c8c8;
+  cursor: not-allowed;
+}
+
+.suggestion-card {
+  margin-top: 20px;
+  padding: 15px;
+  border: 1px solid #e1dfdd;
+  border-radius: 6px;
+  background-color: #faf9f8;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.suggestion-card h3 {
+  margin-top: 0;
+  font-size: 16px;
+  color: #323130;
+  border-bottom: 1px solid #edebe9;
+  padding-bottom: 8px;
+}
+
+.field {
+  margin-bottom: 12px;
+}
+
+.field strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 13px;
+  color: #323130;
+}
+
+.field p {
+  margin: 0;
+  font-size: 13px;
+  background: white;
+  padding: 8px;
+  border: 1px solid #e1dfdd;
+  border-radius: 4px;
+}
+
+.desc-preview {
+  white-space: pre-wrap;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.tips {
+  margin-top: 15px;
+  font-size: 12px;
+  color: #3b3a39;
+  background-color: #fff4ce;
+  padding: 10px;
+  border-radius: 4px;
+  border-left: 4px solid #fbbc05;
+}
+
+.success-btn {
+  background-color: #107c41;
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  cursor: pointer;
+  border-radius: 4px;
+  width: 100%;
+  font-weight: 600;
+  margin-top: 15px;
+}
+
+.success-btn:hover {
+  background-color: #0b5a2f;
+}

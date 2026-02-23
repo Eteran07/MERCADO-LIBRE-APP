@@ -1,0 +1,15 @@
+# Dependencias de Node / React (Frontend)
+node_modules/
+.office-addin-dev-certs/
+
+# Dependencias de Python (Backend)
+venv/
+__pycache__/
+*.pyc
+
+# Variables de entorno y secretos (Para cuando ocultes tu API Key)
+.env
+
+# Archivos temporales del sistema operativo
+.DS_Store
+Thumbs.db
