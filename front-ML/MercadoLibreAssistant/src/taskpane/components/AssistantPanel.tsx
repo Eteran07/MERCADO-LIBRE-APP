@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { getSelectedRowData, writeOptimizedData } from "../../services/excelService";
 import { fetchOptimization } from "../../services/apiService";
-import "./AssistantPanel.css"; // Aquí puedes usar tu propio CSS o Tailwind
+import "./AssistantPanel.css"; 
     
 export const AssistantPanel: React.FC = () => {
   const [loading, setLoading] = useState(false);
@@ -11,21 +11,32 @@ export const AssistantPanel: React.FC = () => {
   const handleOptimize = async () => {
     try {
       setLoading(true);
-      setStatus("Leyendo datos de la celda...");
-      const { title, description, rowIndex } = await getSelectedRowData();
+      setStatus("Leyendo datos de Excel...");
+      const data = await getSelectedRowData();
 
-      if (!title) {
-        setStatus("Error: No se detectó un título en la fila seleccionada.");
+      if (!data.title) {
+        setStatus("Error: No se detectó un título en la celda seleccionada.");
         setLoading(false);
         return;
       }
 
       setStatus("Analizando con Gemini...");
-      const aiResponse = await fetchOptimization(title, description);
+      const aiResponse = await fetchOptimization(data.title, data.description);
       
-      setSuggestion({ ...aiResponse, rowIndex });
+      if (!aiResponse) {
+        throw new Error("La IA devolvió una respuesta vacía.");
+      }
+
+      // Mapeamos los datos de Gemini al estado del panel
+      setSuggestion({
+        nuevo_titulo: aiResponse.nuevo_titulo || "Sin título",
+        nueva_descripcion: aiResponse.nueva_descripcion || "Sin descripción",
+        sugerencias_adicionales: aiResponse.sugerencias_adicionales || "Sin tips",
+        rowIndex: data.rowIndex
+      });
+      
       setStatus("¡Sugerencia generada con éxito!");
-    } catch (error) {
+    } catch (error: any) {
       setStatus(`Error: ${error.message}`);
     } finally {
       setLoading(false);
@@ -36,7 +47,7 @@ export const AssistantPanel: React.FC = () => {
     if (!suggestion) return;
     try {
       await writeOptimizedData(suggestion.rowIndex, suggestion.nuevo_titulo, suggestion.nueva_descripcion);
-      setStatus("¡Cambios aplicados en Excel exitosamente!");
+      setStatus("¡Cambios aplicados en Excel!");
       setSuggestion(null);
     } catch (error) {
       setStatus("Error al escribir en Excel.");
@@ -56,7 +67,8 @@ export const AssistantPanel: React.FC = () => {
         <div className="suggestion-card">
           <h3>Sugerencia de IA</h3>
           <div className="field">
-            <strong>Nuevo Título ({suggestion.nuevo_titulo.length}/60):</strong>
+            {/* El ?.length evita que se rompa si el título falla */}
+            <strong>Nuevo Título ({(suggestion.nuevo_titulo?.length) || 0}/60):</strong>
             <p>{suggestion.nuevo_titulo}</p>
           </div>
           <div className="field">

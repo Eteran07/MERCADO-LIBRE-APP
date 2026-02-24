@@ -29,4 +29,16 @@ async def optimize_endpoint(request: ListingRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import os
+
+    # Rutas a los certificados generados por Office
+    cert_path = r"C:\Users\Edgar\.office-addin-dev-certs\localhost.crt"
+    key_path = r"C:\Users\Edgar\.office-addin-dev-certs\localhost.key"
+
+    # Si los certificados existen, levantamos el servidor en HTTPS
+    if os.path.exists(cert_path) and os.path.exists(key_path):
+        print("🔒 Iniciando servidor de FastAPI con HTTPS...")
+        uvicorn.run(app, host="0.0.0.0", port=8000, ssl_certfile=cert_path, ssl_keyfile=key_path)
+    else:
+        print("⚠️ Iniciando servidor con HTTP normal...")
+        uvicorn.run(app, host="0.0.0.0", port=8000)

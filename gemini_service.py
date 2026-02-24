@@ -1,14 +1,25 @@
-import os
 import google.generativeai as genai
 import json
+import os
+from dotenv import load_dotenv
 
-# Configurar la API Key de Gemini (Asegúrate de tenerla en tus variables de entorno)
-genai.configure(api_key=os.environ.get("AIzaSyCeUocQANm9ddwtK1ADwxnJF3tpHVChTaI"))
+# Carga las variables desde el archivo .env
+load_dotenv()
 
-# Usamos el modelo flash por su rapidez, ideal para asistentes en tiempo real
-model = genai.GenerativeModel('gemini-1.5-flash')
+# Recupera la clave de forma segura
+api_key = os.getenv("GEMINI_API_KEY")
+
+if not api_key:
+    raise ValueError("No se encontró la clave GEMINI_API_KEY en el archivo .env")
+
+# Configuración usando la variable de entorno
+genai.configure(api_key=api_key)
+
+# El resto del código permanece igual
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 def optimize_listing(titulo: str, descripcion: str, categoria: str) -> dict:
+    # ... aquí sigue tu función optimize_listing sin cambios ...
     prompt = f"""
     Eres un experto en SEO y posicionamiento en Mercado Libre. 
     Tu objetivo es optimizar publicaciones para aumentar la conversión.
@@ -33,8 +44,13 @@ def optimize_listing(titulo: str, descripcion: str, categoria: str) -> dict:
     response = model.generate_content(prompt)
     
     try:
-        # Limpiar la respuesta por si Gemini incluye bloques de código markdown
         raw_text = response.text.replace("```json", "").replace("```", "").strip()
+        
+        # Agregamos esto para ver exactamente qué respondió Gemini en la terminal
+        print("\n=== RESPUESTA DE GEMINI ===")
+        print(raw_text)
+        print("===========================\n")
+        
         return json.loads(raw_text)
     except Exception as e:
         return {"error": "No se pudo procesar la respuesta de la IA", "details": str(e)}

@@ -2,16 +2,24 @@
 
 export async function getSelectedRowData() {
   return Excel.run(async (context) => {
-    const range = context.workbook.getSelectedRange();
-    range.load("values, rowIndex");
+    // 1. Obtenemos la celda donde el usuario tiene el cursor para saber la fila
+    const activeCell = context.workbook.getActiveCell();
+    activeCell.load("rowIndex");
     await context.sync();
 
-    // Basado en tu plantilla, asumimos que la columna A (0) es el Título
-    // y la columna I (8) es la Descripción. Esto se puede parametrizar.
-    const title = range.values[0][0]; 
-    const description = range.values[0][8]; 
+    // 2. Apuntamos a la hoja activa
+    const sheet = context.workbook.worksheets.getActiveWorksheet();
+    
+    // 3. Seleccionamos el rango exacto: Fila actual, Columna 0 (A), 1 fila de alto, 9 columnas de ancho (hasta la I)
+    const rowRange = sheet.getRangeByIndexes(activeCell.rowIndex, 0, 1, 9);
+    rowRange.load("values");
+    await context.sync();
 
-    return { title, description, rowIndex: range.rowIndex };
+    // 4. Extraemos los valores. El || "" asegura que si la celda está vacía, envíe un texto en blanco y no un error
+    const title = rowRange.values[0][0] || ""; 
+    const description = rowRange.values[0][8] || ""; 
+
+    return { title, description, rowIndex: activeCell.rowIndex };
   });
 }
 
