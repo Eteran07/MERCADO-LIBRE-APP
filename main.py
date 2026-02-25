@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from models import ListingRequest, ListingResponse
 import gemini_service
+from models import ListingRequest, ListingResponse, SmartRowRequest, SmartRowResponse # Asegúrate de importar los nuevos modelos
 
 app = FastAPI(title="ML Excel Assistant API")
 
@@ -26,6 +27,19 @@ async def optimize_endpoint(request: ListingRequest):
         raise HTTPException(status_code=500, detail=result["error"])
         
     return ListingResponse(**result)
+
+@app.post("/api/smart-edit", response_model=SmartRowResponse)
+async def smart_edit_endpoint(request: SmartRowRequest):
+    # Llamamos a la nueva función en gemini_service
+    result = gemini_service.procesar_fila_inteligente(
+        request.datos_fila,
+        request.comando_usuario
+    )
+    
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+        
+    return SmartRowResponse(datos_actualizados=result)
 
 if __name__ == "__main__":
     import uvicorn

@@ -76,3 +76,93 @@ export async function writeOptimizedData(rowIndex: number, titleColIndex: number
     await context.sync();
   });
 }
+
+// ... (tu código anterior se queda igual) ...
+
+// LEER TODA LA FILA DINÁMICAMENTE
+// LEER TODA LA FILA Y BUSCAR LOS ENCABEZADOS DINÁMICAMENTE (HASTA LA FILA 8)
+export async function getSmartRowData() {
+  return Excel.run(async (context) => {
+    const sheet = context.workbook.worksheets.getActiveWorksheet();
+    
+    // 1. Obtener la fila seleccionada por el usuario
+    const activeCell = context.workbook.getActiveCell();
+    activeCell.load("rowIndex");
+    await context.sync();
+    const rowIndex = activeCell.rowIndex;
+
+    // 2. Leer las primeras 8 filas para encontrar los verdaderos encabezados (ML suele usar la fila 4 o 5)
+    const headerRange = sheet.getRange("A1:DZ8");
+    headerRange.load("values");
+    
+    // 3. Leer los datos de la fila seleccionada
+    const dataRange = sheet.getRangeByIndexes(rowIndex, 0, 1, 130); // 130 columnas (hasta DZ)
+    dataRange.load("values");
+    await context.sync();
+
+    const allHeaderRows = headerRange.values;
+    const rowData = dataRange.values[0];
+
+    let headers: any[] = [];
+
+    // 4. Buscar cuál es la verdadera fila de encabezados
+    // (Buscamos la fila que contenga la palabra "Título", "SKU" o "Características")
+    for (let r = 0; r < allHeaderRows.length; r++) {
+      const row = allHeaderRows[r];
+      if (row.some(c => typeof c === 'string' && (c.toLowerCase().includes('título') || c.toLowerCase().includes('sku')))) {
+        headers = row;
+        break; // Encontramos la fila correcta, detenemos la búsqueda
+      }
+    }
+
+    // Si por alguna razón no encuentra nada, usa la primera fila como respaldo
+    if (headers.length === 0) {
+      headers = allHeaderRows[0];
+    }
+
+    const datos_fila: Record<string, any> = {};
+    const headerColMap: Record<string, number> = {};
+
+    // 5. Mapear cada encabezado con su valor actual
+    for (let i = 0; i < headers.length; i++) {
+      const header = headers[i];
+      if (header && String(header).trim() !== "") {
+        const headerStr = String(header).trim();
+        // Guardamos el dato que se le enviará a la IA
+        datos_fila[headerStr] = rowData[i] ? String(rowData[i]) : "";
+        // Guardamos en qué índice (columna) está para luego escribir ahí
+        headerColMap[headerStr] = i; 
+      }
+    }
+
+    return { datos_fila, headerColMap, rowIndex };
+  });
+}
+
+// ESCRIBIR LOS CAMBIOS (A PRUEBA DE ESPACIOS Y MAYÚSCULAS)
+export async function writeSmartData(rowIndex: number, headerColMap: Record<string, number>, datosActualizados: Record<string, any>) {
+  return Excel.run(async (context) => {
+    const sheet = context.workbook.worksheets.getActiveWorksheet();
+    
+    for (const [colName, newValue] of Object.entries(datosActualizados)) {
+      
+      // Búsqueda inteligente: ignoramos si Gemini devolvió "color" pero en Excel dice "Color "
+      const targetKey = Object.keys(headerColMap).find(
+        k => k.trim().toLowerCase() === colName.trim().toLowerCase()
+      );
+      
+      // Si la columna existe en el Excel, la escribimos
+      if (targetKey !== undefined) {
+        const colIndex = headerColMap[targetKey];
+        const cell = sheet.getCell(rowIndex, colIndex);
+        
+        cell.values = [[newValue]];
+        cell.format.fill.color = "#FFFF99"; // Fondo amarillo claro
+      } else {
+        console.warn(`La IA sugirió la columna "${colName}", pero no se encontró en el Excel.`);
+      }
+    }
+    
+    await context.sync();
+  });
+}
