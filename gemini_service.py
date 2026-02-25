@@ -66,9 +66,10 @@ def procesar_fila_inteligente(datos_fila: dict, comando_usuario: str) -> dict:
     
     TAREAS:
     1. Analiza la instrucción del usuario y aplícala a los datos.
-    2. Si el usuario pide completar características, usa el valor de la columna 'SKU' u otras referencias para buscar en tu conocimiento general y llenar los campos vacíos (como Color, Marca, Modelo, etc.).
-    3. Devuelve ÚNICAMENTE un objeto JSON válido con las columnas que fueron modificadas o llenadas. No devuelvas las columnas que no tocaste.
-    4. El formato debe ser estrictamente JSON, sin formato markdown extra (sin ```json).
+    2. Si el usuario pide completar características, usa el valor de la columna 'SKU' u otras referencias para buscar en tu conocimiento.
+    3. IMPORTANTE: Cuando devuelvas el JSON, los nombres de las columnas (las llaves) deben ser EXACTAMENTE IGUALES a como te las envié. Si te envié "Modelo", devuelve "Modelo" (no devuelvas "Model", ni "Modelo alfanumérico").
+    4. Devuelve ÚNICAMENTE un objeto JSON válido con las columnas que fueron modificadas o llenadas. No devuelvas las columnas que no tocaste.
+    
     
     Ejemplo de salida esperado: {{"Color": "Negro", "Marca": "Sony"}}
     """

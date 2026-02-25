@@ -144,25 +144,113 @@ export async function writeSmartData(rowIndex: number, headerColMap: Record<stri
   return Excel.run(async (context) => {
     const sheet = context.workbook.worksheets.getActiveWorksheet();
     
+    // FUNCIÓN DE LIMPIEZA EXTREMA (Quita espacios, mayúsculas y saltos de línea)
+    const normalize = (str: string) => String(str).trim().toLowerCase().replace(/[\r\n]+/g, '');
+
     for (const [colName, newValue] of Object.entries(datosActualizados)) {
       
-      // Búsqueda inteligente: ignoramos si Gemini devolvió "color" pero en Excel dice "Color "
+      // Buscamos usando la función de limpieza extrema en ambos lados
       const targetKey = Object.keys(headerColMap).find(
-        k => k.trim().toLowerCase() === colName.trim().toLowerCase()
+        k => normalize(k) === normalize(colName)
       );
       
-      // Si la columna existe en el Excel, la escribimos
       if (targetKey !== undefined) {
         const colIndex = headerColMap[targetKey];
         const cell = sheet.getCell(rowIndex, colIndex);
         
         cell.values = [[newValue]];
-        cell.format.fill.color = "#FFFF99"; // Fondo amarillo claro
+        cell.format.fill.color = "#FFFF99"; 
       } else {
         console.warn(`La IA sugirió la columna "${colName}", pero no se encontró en el Excel.`);
       }
     }
     
+    await context.sync();
+  });
+}
+
+// LEER MÚLTIPLES FILAS SELECCIONADAS
+export async function getMultipleSmartRowsData() {
+  return Excel.run(async (context) => {
+    const sheet = context.workbook.worksheets.getActiveWorksheet();
+    
+    // 1. Obtener el rango completo que seleccionaste con el mouse
+    const range = context.workbook.getSelectedRange();
+    range.load(["rowIndex", "rowCount"]);
+    await context.sync();
+
+    const startRow = range.rowIndex;
+    const rowCount = range.rowCount;
+
+    // 2. Buscar los encabezados (igual que antes, en las primeras 8 filas)
+    const headerRange = sheet.getRange("A1:DZ8");
+    headerRange.load("values");
+    
+    // 3. Cargar los datos específicos del bloque que seleccionaste
+    const dataRange = sheet.getRangeByIndexes(startRow, 0, rowCount, 130);
+    dataRange.load("values");
+    await context.sync();
+
+    const allHeaderRows = headerRange.values;
+    const allRowsData = dataRange.values;
+
+    let headers: any[] = [];
+    for (let r = 0; r < allHeaderRows.length; r++) {
+      const row = allHeaderRows[r];
+      if (row.some(c => typeof c === 'string' && (c.toLowerCase().includes('título') || c.toLowerCase().includes('sku')))) {
+        headers = row; break;
+      }
+    }
+    if (headers.length === 0) headers = allHeaderRows[0];
+
+    const headerColMap: Record<string, number> = {};
+    for (let i = 0; i < headers.length; i++) {
+      if (headers[i] && String(headers[i]).trim() !== "") {
+        headerColMap[String(headers[i]).trim()] = i;
+      }
+    }
+
+    // 4. Armar un arreglo con todas las filas válidas
+    const rowsData = [];
+    for (let r = 0; r < rowCount; r++) {
+      const rowData = allRowsData[r];
+      const datos_fila: Record<string, any> = {};
+      
+      for (const [headerStr, colIndex] of Object.entries(headerColMap)) {
+        datos_fila[headerStr] = rowData[colIndex] ? String(rowData[colIndex]) : "";
+      }
+      
+      // Evitar procesar filas que estén totalmente en blanco
+      if (Object.values(datos_fila).some(v => String(v).trim() !== "")) {
+        rowsData.push({ rowIndex: startRow + r, datos_fila });
+      }
+    }
+
+    return { rowsData, headerColMap };
+  });
+}
+
+// ESCRIBIR SOLO LAS FILAS QUE APROBASTE EN EL CHECKLIST
+export async function writeApprovedSmartData(approvedChanges: any[], headerColMap: Record<string, number>) {
+  return Excel.run(async (context) => {
+    const sheet = context.workbook.worksheets.getActiveWorksheet();
+    const normalize = (str: string) => String(str).trim().toLowerCase().replace(/[\r\n]+/g, '');
+
+    // Iteramos solo sobre las filas que el usuario dejó marcadas con el check
+    for (const change of approvedChanges) {
+      const { rowIndex, datos_actualizados } = change;
+      
+      for (const [colName, newValue] of Object.entries(datos_actualizados)) {
+        const targetKey = Object.keys(headerColMap).find(k => normalize(k) === normalize(colName));
+        
+        if (targetKey !== undefined) {
+          const colIndex = headerColMap[targetKey];
+          const cell = sheet.getCell(rowIndex, colIndex);
+          cell.values = [[newValue]];
+          cell.format.fill.color = "#FFFF99"; 
+        }
+      }
+    }
     await context.sync();
   });
 }
