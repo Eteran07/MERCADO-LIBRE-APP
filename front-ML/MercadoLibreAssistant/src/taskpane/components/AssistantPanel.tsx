@@ -14,25 +14,27 @@ export const AssistantPanel: React.FC = () => {
       setStatus("Leyendo datos de Excel...");
       const data = await getSelectedRowData();
 
-      if (!data.title) {
-        setStatus("Error: No se detectó un título en la celda seleccionada.");
+      if (!data.title && !data.description) {
+        setStatus("Error: Título y descripción están vacíos en la fila seleccionada.");
         setLoading(false);
         return;
       }
 
       setStatus("Analizando con Gemini...");
-      const aiResponse = await fetchOptimization(data.title, data.description);
+      const aiResponse: any = await fetchOptimization(data.title, data.description);
       
       if (!aiResponse) {
         throw new Error("La IA devolvió una respuesta vacía.");
       }
 
-      // Mapeamos los datos de Gemini al estado del panel
+      // Guardamos los datos generados Y las coordenadas exactas de las columnas
       setSuggestion({
-        nuevo_titulo: aiResponse.nuevo_titulo || "Sin título",
-        nueva_descripcion: aiResponse.nueva_descripcion || "Sin descripción",
-        sugerencias_adicionales: aiResponse.sugerencias_adicionales || "Sin tips",
-        rowIndex: data.rowIndex
+        nuevo_titulo: aiResponse.nuevo_titulo || aiResponse.title || "",
+        nueva_descripcion: aiResponse.nueva_descripcion || aiResponse.description || "",
+        sugerencias_adicionales: aiResponse.sugerencias_adicionales || aiResponse.tips || "",
+        rowIndex: data.rowIndex,
+        titleColIndex: data.titleColIndex, // Guardamos la columna del título
+        descColIndex: data.descColIndex    // Guardamos la columna de la descripción
       });
       
       setStatus("¡Sugerencia generada con éxito!");
@@ -46,8 +48,15 @@ export const AssistantPanel: React.FC = () => {
   const handleApply = async () => {
     if (!suggestion) return;
     try {
-      await writeOptimizedData(suggestion.rowIndex, suggestion.nuevo_titulo, suggestion.nueva_descripcion);
-      setStatus("¡Cambios aplicados en Excel!");
+      // Pasamos las coordenadas guardadas a la función de escritura
+      await writeOptimizedData(
+        suggestion.rowIndex, 
+        suggestion.titleColIndex, 
+        suggestion.descColIndex, 
+        suggestion.nuevo_titulo, 
+        suggestion.nueva_descripcion
+      );
+      setStatus("¡Cambios aplicados en Excel exitosamente!");
       setSuggestion(null);
     } catch (error) {
       setStatus("Error al escribir en Excel.");

@@ -1,7 +1,15 @@
+import os
+from dotenv import load_dotenv
 import google.generativeai as genai
 
-# Pon tu clave real aquí
-genai.configure(api_key="AIzaSyAgHBUcZlViWmtrA1efOKkj-7P1ezeh2tM")
+# 1. Cargar las variables ocultas del archivo .env
+load_dotenv()
+
+# 2. Leer la clave de forma segura
+api_key = os.getenv("GEMINI_API_KEY")
+
+# 3. Configurar Gemini
+genai.configure(api_key=api_key)
 
 print("Consultando modelos disponibles...")
 try:
@@ -11,3 +19,4 @@ try:
     print("¡Consulta finalizada!")
 except Exception as e:
     print(f"Error al consultar: {e}")
+    
