@@ -1,127 +1,94 @@
 import React, { useState } from "react";
-// Ya no necesitamos las funciones de una sola fila, usamos las masivas para todo
 import { getMultipleSmartRowsData, writeApprovedSmartData } from "../../services/excelService";
-import { fetchOptimization, fetchSmartEdit } from "../../services/apiService";
+import { fetchOptimization, fetchSmartEditBulk } from "../../services/apiService";
 import "./AssistantPanel.css"; 
-    
+
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export const AssistantPanel: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string>("Selecciona una o varias filas en Excel.");
-  
   const [chatCommand, setChatCommand] = useState<string>("");
   
-  // ESTADOS COMPARTIDOS PARA EL CHECKLIST MASIVO
   const [bulkResults, setBulkResults] = useState<any[]>([]);
   const [selectedResultIds, setSelectedResultIds] = useState<Set<number>>(new Set());
   const [headerMapRef, setHeaderMapRef] = useState<Record<string, number>>({});
 
-  // ==========================================
-  // 1. MODO CLÁSICO MASIVO (Optimizar Títulos)
-  // ==========================================
+  // === MODO CLÁSICO MASIVO ===
   const handleOptimizeBulk = async () => { 
     try {
-      setLoading(true); 
-      setStatus("Leyendo selección para optimizar...");
+      setLoading(true); setStatus("Leyendo selección...");
       const { rowsData, headerColMap } = await getMultipleSmartRowsData();
-      
-      if (rowsData.length === 0) {
-        setStatus("No se encontraron datos en la selección.");
-        setLoading(false); return;
-      }
+      if (rowsData.length === 0) { setStatus("No hay datos."); setLoading(false); return; }
 
-      // Buscar cómo se llaman exactamente las columnas de título y descripción en este Excel
       const titleKey = Object.keys(headerColMap).find(k => k.toLowerCase().includes('título') || k.toLowerCase().includes('titulo'));
       const descKey = Object.keys(headerColMap).find(k => k.toLowerCase().includes('descripción') || k.toLowerCase().includes('descripcion'));
-
-      if (!titleKey || !descKey) {
-        setStatus("Error: No se encontraron las columnas 'Título' y 'Descripción'.");
-        setLoading(false); return;
-      }
+      if (!titleKey || !descKey) { setStatus("Error: Columnas Título/Descripción no encontradas."); setLoading(false); return; }
 
       setHeaderMapRef(headerColMap);
       const results: any[] = [];
 
-      // Procesar cada fila
       for (let i = 0; i < rowsData.length; i++) {
-        setStatus(`Optimizando... Fila ${i + 1} de ${rowsData.length}`);
+        setStatus(`Optimizando Títulos... Fila ${i + 1} de ${rowsData.length}`);
         const row = rowsData[i];
-        const currentTitle = row.datos_fila[titleKey] || "";
-        const currentDesc = row.datos_fila[descKey] || "";
-
-        if (!currentTitle && !currentDesc) continue;
+        if (!row.datos_fila[titleKey] && !row.datos_fila[descKey]) continue;
 
         try {
-          const aiResponse: any = await fetchOptimization(currentTitle, currentDesc);
+          const aiResponse: any = await fetchOptimization(row.datos_fila[titleKey] || "", row.datos_fila[descKey] || "");
           if (aiResponse.nuevo_titulo || aiResponse.nueva_descripcion) {
             results.push({
-              id: i,
-              rowIndex: row.rowIndex,
-              datos_actualizados: {
-                [titleKey]: aiResponse.nuevo_titulo || currentTitle,
-                [descKey]: aiResponse.nueva_descripcion || currentDesc
-              },
-              // Guardamos los tips para mostrarlos en el checklist
+              id: i, rowIndex: row.rowIndex,
+              datos_actualizados: { [titleKey]: aiResponse.nuevo_titulo, [descKey]: aiResponse.nueva_descripcion },
               sugerencias: aiResponse.sugerencias_adicionales 
             });
           }
-        } catch (error) {
-          console.error(`Error optimizando fila ${row.rowIndex}`, error);
-        }
+        } catch (error) { console.error("Error en fila", error); }
+        
+        if (i < rowsData.length - 1) await delay(2000); 
       }
 
       setBulkResults(results);
       setSelectedResultIds(new Set(results.map(r => r.id)));
-      setStatus(`¡Optimización completa! Revisa las ${results.length} propuestas.`);
-    } catch (error: any) { 
-      setStatus(`Error: ${error.message}`); 
-    } finally { 
-      setLoading(false); 
-    }
+      setStatus(`¡Optimización completa!`);
+    } catch (error: any) { setStatus(`Error: ${error.message}`); } finally { setLoading(false); }
   };
 
-
-  // ==========================================
-  // 2. MODO CHAT MASIVO (Cualquier columna)
-  // ==========================================
+  // === MODO CHAT LOTE MASIVO ===
   const handleSmartEditBulk = async () => {
-    if (!chatCommand.trim()) {
-      setStatus("Por favor, escribe una instrucción en el chat."); return;
-    }
+    if (!chatCommand.trim()) { setStatus("Por favor, escribe una instrucción."); return; }
 
     try {
-      setLoading(true);
-      setStatus("Leyendo selección...");
+      setLoading(true); setStatus("Leyendo toda la selección...");
       const { rowsData, headerColMap } = await getMultipleSmartRowsData();
-      
-      if (rowsData.length === 0) {
-        setStatus("No se encontraron datos en la selección.");
-        setLoading(false); return;
-      }
+      if (rowsData.length === 0) { setStatus("No hay datos."); setLoading(false); return; }
 
       setHeaderMapRef(headerColMap);
-      const results: any[] = [];
+      
+      const loteParaIA = rowsData.map((row, index) => ({
+         id_fila: index,
+         datos: row.datos_fila
+      }));
 
-      for (let i = 0; i < rowsData.length; i++) {
-        setStatus(`Pensando... Fila ${i + 1} de ${rowsData.length}`);
-        const row = rowsData[i];
-        
-        try {
-          const response = await fetchSmartEdit(row.datos_fila, chatCommand);
-          if (response.datos_actualizados && Object.keys(response.datos_actualizados).length > 0) {
-            results.push({
-              id: i, 
-              rowIndex: row.rowIndex,
-              datos_actualizados: response.datos_actualizados
-            });
-          }
-        } catch (error) {
-          console.error(`Error procesando fila ${row.rowIndex}`, error);
-        }
+      setStatus(`Enviando ${rowsData.length} filas a Gemini en UN SOLO viaje...`);
+      const response = await fetchSmartEditBulk(loteParaIA, chatCommand);
+      
+      const results: any[] = [];
+      if (response.resultados && Array.isArray(response.resultados)) {
+        response.resultados.forEach((res: any) => {
+           const originalRow = rowsData[res.id_fila];
+           if (originalRow && res.datos_actualizados) {
+             results.push({
+               id: res.id_fila,
+               rowIndex: originalRow.rowIndex,
+               datos_actualizados: res.datos_actualizados
+             });
+           }
+        });
       }
 
       setBulkResults(results);
       setSelectedResultIds(new Set(results.map(r => r.id)));
-      setStatus(`¡Análisis completo! Revisa las ${results.length} propuestas.`);
+      setStatus(`¡Procesamiento masivo completado! Revisa las ${results.length} propuestas.`);
     } catch (error: any) {
       setStatus(`Error: ${error.message}`);
     } finally {
@@ -129,14 +96,9 @@ export const AssistantPanel: React.FC = () => {
     }
   };
 
-
-  // ==========================================
-  // LÓGICA COMPARTIDA DEL CHECKLIST
-  // ==========================================
   const toggleSelection = (id: number) => {
     const newSet = new Set(selectedResultIds);
-    if (newSet.has(id)) newSet.delete(id);
-    else newSet.add(id);
+    if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
     setSelectedResultIds(newSet);
   };
 
@@ -146,10 +108,8 @@ export const AssistantPanel: React.FC = () => {
       const approvedChanges = bulkResults.filter(res => selectedResultIds.has(res.id));
       await writeApprovedSmartData(approvedChanges, headerMapRef);
       setStatus(`¡${approvedChanges.length} filas actualizadas con éxito!`);
-      setBulkResults([]); // Limpiar la ventana tras aplicar
-    } catch (error) {
-      setStatus("Error al escribir los cambios masivos.");
-    }
+      setBulkResults([]); 
+    } catch (error) { setStatus("Error al escribir los cambios."); }
   };
 
   return (
@@ -157,14 +117,12 @@ export const AssistantPanel: React.FC = () => {
       <h2>Asistente Mercado Libre</h2>
       <p className="status-text">{status}</p>
       
-      {/* BOTÓN MODO CLÁSICO MASIVO */}
       <button className="primary-btn" onClick={handleOptimizeBulk} disabled={loading} style={{ marginBottom: "15px" }}>
-        {loading ? "Procesando Selección..." : "Optimizar Títulos Seleccionados"}
+        {loading ? "Procesando..." : "Optimizar Títulos Seleccionados"}
       </button>
 
-      {/* SECCIÓN MODO CHAT MASIVO */}
       <div className="chat-section" style={{ borderTop: "1px solid #ccc", paddingTop: "15px" }}>
-        <h3>Edición Libre con IA</h3>
+        <h3>Edición Masiva con IA</h3>
         <textarea 
           placeholder="Ej: Usa el SKU para llenar Color, Marca y Modelo."
           value={chatCommand}
@@ -176,55 +134,30 @@ export const AssistantPanel: React.FC = () => {
           style={{ width: "100%", marginBottom: "10px", padding: "5px" }}
         />
         <button className="primary-btn" onClick={handleSmartEditBulk} disabled={loading || !chatCommand}>
-          {loading ? "Procesando Selección..." : "Ejecutar Comando"}
+          {loading ? "Analizando lote..." : "Ejecutar en Toda la Selección"}
         </button>
       </div>
 
-      {/* VENTANA UNIFICADA DE PREVISUALIZACIÓN Y CHECKLIST */}
       {bulkResults.length > 0 && (
         <div className="bulk-results-card" style={{ marginTop: "15px", padding: "10px", backgroundColor: "#f9f9f9", borderRadius: "5px", border: "1px solid #ddd" }}>
           <h3 style={{ margin: "0 0 10px 0" }}>Cambios Propuestos</h3>
-          
           <div style={{ maxHeight: "300px", overflowY: "auto", marginBottom: "15px" }}>
             {bulkResults.map((res) => (
               <div key={res.id} style={{ display: "flex", alignItems: "flex-start", marginBottom: "10px", borderBottom: "1px solid #eee", paddingBottom: "5px" }}>
-                
-                <input 
-                  type="checkbox" 
-                  checked={selectedResultIds.has(res.id)}
-                  onChange={() => toggleSelection(res.id)}
-                  style={{ marginTop: "4px", marginRight: "10px", cursor: "pointer" }}
-                />
-                
+                <input type="checkbox" checked={selectedResultIds.has(res.id)} onChange={() => toggleSelection(res.id)} style={{ marginTop: "4px", marginRight: "10px", cursor: "pointer" }}/>
                 <div style={{ flex: 1, cursor: "pointer" }} onClick={() => toggleSelection(res.id)}>
-                  <strong style={{ display: "block", fontSize: "0.9em", color: "#0078d4" }}>
-                    Fila Excel: {res.rowIndex + 1}
-                  </strong>
-                  
+                  <strong style={{ display: "block", fontSize: "0.9em", color: "#0078d4" }}>Fila Excel: {res.rowIndex + 1}</strong>
                   {Object.entries(res.datos_actualizados).map(([columna, valor]) => (
                     <div key={columna} style={{ fontSize: "0.85em", marginTop: "2px" }}>
                       <strong>{columna}:</strong> <span style={{ color: "#333" }}>{String(valor)}</span>
                     </div>
                   ))}
-
-                  {/* Si hay tips/sugerencias (del modo clásico), los mostramos aquí */}
-                  {res.sugerencias && (
-                    <div style={{ fontSize: "0.8em", color: "#666", marginTop: "4px", fontStyle: "italic" }}>
-                      💡 {res.sugerencias}
-                    </div>
-                  )}
+                  {res.sugerencias && <div style={{ fontSize: "0.8em", color: "#666", marginTop: "4px", fontStyle: "italic" }}>💡 {res.sugerencias}</div>}
                 </div>
-
               </div>
             ))}
           </div>
-
-          <button 
-            className="success-btn" 
-            onClick={handleApplyApproved} 
-            disabled={selectedResultIds.size === 0}
-            style={{ width: "100%", backgroundColor: "#ffc107", color: "#000", fontWeight: "bold" }}
-          >
+          <button className="success-btn" onClick={handleApplyApproved} disabled={selectedResultIds.size === 0} style={{ width: "100%", backgroundColor: "#ffc107", color: "#000", fontWeight: "bold" }}>
             Aplicar {selectedResultIds.size} seleccionados (Amarillo)
           </button>
         </div>

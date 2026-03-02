@@ -1,8 +1,9 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from models import ListingRequest, ListingResponse
 import gemini_service
-from models import ListingRequest, ListingResponse, SmartRowRequest, SmartRowResponse # Asegúrate de importar los nuevos modelos
+
+# Importamos solo los modelos que existen actualmente en models.py
+from models import ListingRequest, ListingResponse, SmartBatchRequest, SmartBatchResponse
 
 app = FastAPI(title="ML Excel Assistant API")
 
@@ -15,6 +16,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# === 1. RUTA CLÁSICA (Optimizar Título/Desc) ===
 @app.post("/api/optimize", response_model=ListingResponse)
 async def optimize_endpoint(request: ListingRequest):
     result = gemini_service.optimize_listing(
@@ -28,19 +30,51 @@ async def optimize_endpoint(request: ListingRequest):
         
     return ListingResponse(**result)
 
-@app.post("/api/smart-edit", response_model=SmartRowResponse)
-async def smart_edit_endpoint(request: SmartRowRequest):
-    # Llamamos a la nueva función en gemini_service
-    result = gemini_service.procesar_fila_inteligente(
-        request.datos_fila,
-        request.comando_usuario
-    )
+
+# === 2. NUEVA RUTA MASIVA (Lotes/Batch) ===
+@app.post("/api/smart-edit-bulk", response_model=SmartBatchResponse)
+async def smart_edit_bulk_endpoint(request: SmartBatchRequest):
+    # Convertimos los modelos a diccionarios normales para enviarlos a Gemini
+    filas_dict = [{"id_fila": f.id_fila, "datos": f.datos} for f in request.filas]
+    
+    result = gemini_service.procesar_lote_inteligente(filas_dict, request.comando_usuario)
     
     if "error" in result:
         raise HTTPException(status_code=500, detail=result["error"])
         
-    return SmartRowResponse(datos_actualizados=result)
+    return SmartBatchResponse(resultados=result["resultados"])
 
+
+# === 3. RUTA DE ESTADO DE API (Verificar cuota) ===
+@app.get("/api/status")
+async def status_endpoint():
+    """
+    Verifica el estado de la API de Gemini y la cuota disponible
+    """
+    estado = gemini_service.verificar_estado_api()
+    
+    if estado["estado"] == "CUOTA_AGOTADA":
+        raise HTTPException(
+            status_code=429, 
+            detail={
+                "mensaje": "Cuota de API agotada",
+                "estado": "CUOTA_AGOTADA",
+                "modelo_principal": estado["modelo_principal"],
+                "modelos_alternativos": estado.get("modelos_alternativos", []),
+                "solucion": "Espera hasta manana para el reset de cuota, o usa una nueva API key"
+            }
+        )
+    elif estado["estado"] == "ERROR":
+        raise HTTPException(status_code=500, detail=estado)
+    
+    return {
+        "estado": "OK",
+        "mensaje": "API funcionando correctamente",
+        "modelo": estado["modelo_principal"]
+    }
+
+
+# === ARRANQUE DEL SERVIDOR ===
 if __name__ == "__main__":
     import uvicorn
     import os

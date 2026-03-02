@@ -170,11 +170,11 @@ export async function writeSmartData(rowIndex: number, headerColMap: Record<stri
 }
 
 // LEER MÚLTIPLES FILAS SELECCIONADAS
+// LEER MÚLTIPLES FILAS SELECCIONADAS
 export async function getMultipleSmartRowsData() {
   return Excel.run(async (context) => {
     const sheet = context.workbook.worksheets.getActiveWorksheet();
     
-    // 1. Obtener el rango completo que seleccionaste con el mouse
     const range = context.workbook.getSelectedRange();
     range.load(["rowIndex", "rowCount"]);
     await context.sync();
@@ -182,11 +182,9 @@ export async function getMultipleSmartRowsData() {
     const startRow = range.rowIndex;
     const rowCount = range.rowCount;
 
-    // 2. Buscar los encabezados (igual que antes, en las primeras 8 filas)
     const headerRange = sheet.getRange("A1:DZ8");
     headerRange.load("values");
     
-    // 3. Cargar los datos específicos del bloque que seleccionaste
     const dataRange = sheet.getRangeByIndexes(startRow, 0, rowCount, 130);
     dataRange.load("values");
     await context.sync();
@@ -210,7 +208,6 @@ export async function getMultipleSmartRowsData() {
       }
     }
 
-    // 4. Armar un arreglo con todas las filas válidas
     const rowsData = [];
     for (let r = 0; r < rowCount; r++) {
       const rowData = allRowsData[r];
@@ -220,7 +217,6 @@ export async function getMultipleSmartRowsData() {
         datos_fila[headerStr] = rowData[colIndex] ? String(rowData[colIndex]) : "";
       }
       
-      // Evitar procesar filas que estén totalmente en blanco
       if (Object.values(datos_fila).some(v => String(v).trim() !== "")) {
         rowsData.push({ rowIndex: startRow + r, datos_fila });
       }
@@ -230,13 +226,12 @@ export async function getMultipleSmartRowsData() {
   });
 }
 
-// ESCRIBIR SOLO LAS FILAS QUE APROBASTE EN EL CHECKLIST
+// ESCRIBIR SOLO LO APROBADO (CON LIMPIEZA EXTREMA)
 export async function writeApprovedSmartData(approvedChanges: any[], headerColMap: Record<string, number>) {
   return Excel.run(async (context) => {
     const sheet = context.workbook.worksheets.getActiveWorksheet();
     const normalize = (str: string) => String(str).trim().toLowerCase().replace(/[\r\n]+/g, '');
 
-    // Iteramos solo sobre las filas que el usuario dejó marcadas con el check
     for (const change of approvedChanges) {
       const { rowIndex, datos_actualizados } = change;
       
@@ -254,3 +249,4 @@ export async function writeApprovedSmartData(approvedChanges: any[], headerColMa
     await context.sync();
   });
 }
+

@@ -1,29 +1,29 @@
 from pydantic import BaseModel
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 
-# ==========================================
-# MODELOS PARA EL MODO CLÁSICO (Originales)
-# ==========================================
+# Modelo para el botón de Optimizar Título/Desc
 class ListingRequest(BaseModel):
     titulo_actual: str
     descripcion_actual: str
-    categoria: str = "General" # Opcional, extraído de la plantilla
+    categoria: str = "General"
 
 class ListingResponse(BaseModel):
     nuevo_titulo: str
     nueva_descripcion: str
     sugerencias_adicionales: str
 
+# Modelo para el Chat Masivo (Lotes)
+class FilaBatch(BaseModel):
+    id_fila: int
+    datos: Dict[str, Any]
 
-# ==========================================
-# MODELOS PARA EL MODO INTELIGENTE MASIVO (Nuevos)
-# ==========================================
-class SmartRowRequest(BaseModel):
-    # Recibe toda la fila como un diccionario dinámico (Ej: {"SKU": "123", "Color": "", ...})
-    datos_fila: Dict[str, Any]
-    # Recibe lo que escribas en el nuevo buscador/chat
+class SmartBatchRequest(BaseModel):
+    filas: List[FilaBatch]
     comando_usuario: str
 
-class SmartRowResponse(BaseModel):
-    # Devuelve solo las columnas que la IA modificó
+class ResultadoBatch(BaseModel):
+    id_fila: int
     datos_actualizados: Dict[str, Any]
+
+class SmartBatchResponse(BaseModel):
+    resultados: List[ResultadoBatch]

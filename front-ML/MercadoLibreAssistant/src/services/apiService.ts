@@ -48,3 +48,21 @@ export async function fetchSmartEdit(datosFila: any, comandoUsuario: string) {
 
   return await response.json();
 }
+
+export async function fetchSmartEditBulk(filas: any[], comandoUsuario: string) {
+  const response = await fetch("https://localhost:8000/api/smart-edit-bulk", { 
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      filas: filas,
+      comando_usuario: comandoUsuario
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ detail: "Error de red" }));
+    throw new Error(errorData.detail || "Error desconocido");
+  }
+
+  return await response.json();
+}
