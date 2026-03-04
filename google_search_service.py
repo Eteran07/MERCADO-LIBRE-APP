@@ -1,42 +1,58 @@
 from ddgs import DDGS
 import time
-import re
 
 def buscar_imagen(termino_busqueda: str) -> list:
-    # 1. Limpiamos caracteres raros (comillas, guiones) que confunden al buscador
-    texto_limpio = re.sub(r'[^a-zA-Z0-9\s]', ' ', termino_busqueda)
+    # 1. Limpieza de caracteres para no confundir al buscador
+    limpio = termino_busqueda.replace('"', '').replace("'", "").replace("(", "").replace(")", "").replace("-", " ")
+    palabras = limpio.split()
     
-    # 2. Tomamos SOLO las primeras 5 o 6 palabras para no saturar al buscador
-    palabras = texto_limpio.split()
-    busqueda_corta = " ".join(palabras[:6])
-    
-    # 3. Le agregamos una palabra clave sencilla
-    busqueda_optimizada = f"{busqueda_corta} producto"
-    
-    print(f"🔍 Texto original: {termino_busqueda}")
-    print(f"💡 Buscando en DDG: {busqueda_optimizada}")
+    # Extraemos el SKU del término (normalmente lo enviamos al final del título en el main.py)
+    # Pero para asegurar, haremos una búsqueda combinada.
     
     links_encontrados = []
-    try:
-        # Pausa de 2 segundos para no ser bloqueados
-        time.sleep(2) 
+    
+    # === ESTRATEGIA DE BÚSQUEDA BLINDADA (4 NIVELES) ===
+    intentos = [
+        " ".join(palabras),           # Nivel 1: Título completo + SKU (Máxima precisión)
+        " ".join(palabras[-3:]),      # Nivel 2: Solo las últimas palabras (Donde suele estar el SKU/Modelo)
+        " ".join(palabras[:4]),       # Nivel 3: Solo el inicio (Marca y Producto)
+        palabras[0] if palabras else None # Nivel 4: Palabra clave principal (Último recurso)
+    ]
+    
+    for query in intentos:
+        if not query or len(query) < 3: continue
         
-        # Buscamos usando el texto acortado
-        resultados = DDGS().images(
-            busqueda_optimizada,
-            max_results=10 
-        )
+        print(f"🔍 Probando búsqueda nivel: {query}")
         
-        for resultado in resultados:
-            link = resultado.get("image")
-            if link and link.startswith("http"):
-                links_encontrados.append(link)
-            if len(links_encontrados) == 4:
-                break
+        try:
+            time.sleep(1.5) # Pausa para evitar bloqueos
+            
+            with DDGS() as ddgs:
+                resultados = ddgs.images(
+                    query,
+                    region="wt-wt", 
+                    safesearch="off",
+                    max_results=10
+                )
                 
-        print(f"✅ Se encontraron {len(links_encontrados)} imágenes.")
-        return links_encontrados
-        
-    except Exception as e:
-        print(f"❌ Error al buscar con DDG: {e}")
-        return []
+                for r in resultados:
+                    url = r.get("image")
+                    if url and url.startswith("http"):
+                        links_encontrados.append(url)
+                    if len(links_encontrados) >= 4:
+                        break
+            
+            if links_encontrados:
+                print(f"✅ ¡Encontrado! {len(links_encontrados)} imágenes con: {query}")
+                return links_encontrados 
+            else:
+                print(f"⚠️ Sin resultados para: {query}. Bajando nivel de precisión...")
+                
+        except Exception as e:
+            print(f"❌ Error en intento: {e}")
+            if "403" in str(e):
+                print("🛑 Bloqueo temporal de DuckDuckGo. Esperando...")
+                time.sleep(5)
+            continue
+
+    return []

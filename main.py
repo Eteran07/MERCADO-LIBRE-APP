@@ -104,7 +104,7 @@ async def status_endpoint():
 async def fetch_images_options(request: ImageRequest):
     """Paso 1: Busca opciones y se las muestra al usuario en Excel"""
     termino = f"{request.titulo} {request.sku}"
-    opciones_urls = buscar_imagen(termino)
+    opciones_urls = buscar_imagen(termino)  
     
     if not opciones_urls:
         raise HTTPException(status_code=404, detail="No se encontraron imágenes para este producto.")
