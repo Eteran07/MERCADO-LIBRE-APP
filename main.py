@@ -7,24 +7,26 @@ import uvicorn
 # Importaciones de tus servicios
 import gemini_service
 from google_search_service import buscar_imagen
-# CORRECCIÓN 1: El nombre correcto de tu función
+# Nombre correcto de tu función en image_service.py
 from image_service import procesar_imagen_estandar
 
-# Importamos los modelos
-from models import ListingRequest, ListingResponse, SmartBatchRequest, SmartBatchResponse, ImageFetchRequest
+# Importamos los modelos base
+from models import ListingRequest, ListingResponse, SmartBatchRequest, SmartBatchResponse
 
 # ==========================================
-# NUEVOS MODELOS DE DATOS PARA IMÁGENES
+# MODELOS DE DATOS ACTUALIZADOS (Con nombre_hoja)
 # ==========================================
 class ImageRequest(BaseModel):
     sku: str
     titulo: str
     categoria: str
+    nombre_hoja: str  # <--- NUEVO: Para identificar la pestaña de Excel
 
 class SeleccionImagenRequest(BaseModel):
     url_imagen: str
     sku: str
-    categoria: str # <-- CORRECCIÓN 2: Añadido para que la foto se guarde en la carpeta correcta
+    categoria: str
+    nombre_hoja: str  # <--- NUEVO: Para crear la carpeta raíz con el nombre de la hoja
 
 
 # ========================================================
@@ -36,7 +38,7 @@ app = FastAPI(title="ML Excel Assistant API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
-    allow_credentials=False, # <-- ESTO ES VITAL QUE SEA FALSE
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -59,7 +61,6 @@ async def optimize_endpoint(request: ListingRequest):
 # === 2. NUEVA RUTA MASIVA (Lotes/Batch) ===
 @app.post("/api/smart-edit-bulk", response_model=SmartBatchResponse)
 async def smart_edit_bulk_endpoint(request: SmartBatchRequest):
-    # Convertimos los modelos a diccionarios normales para enviarlos a Gemini
     filas_dict = [{"id_fila": f.id_fila, "datos": f.datos} for f in request.filas]
     
     result = gemini_service.procesar_lote_inteligente(filas_dict, request.comando_usuario)
@@ -73,9 +74,6 @@ async def smart_edit_bulk_endpoint(request: SmartBatchRequest):
 # === 3. RUTA DE ESTADO DE API (Verificar cuota) ===
 @app.get("/api/status")
 async def status_endpoint():
-    """
-    Verifica el estado de la API de Gemini y la cuota disponible
-    """
     estado = gemini_service.verificar_estado_api()
     
     if estado["estado"] == "CUOTA_AGOTADA":
@@ -85,7 +83,6 @@ async def status_endpoint():
                 "mensaje": "Cuota de API agotada",
                 "estado": "CUOTA_AGOTADA",
                 "modelo_principal": estado["modelo_principal"],
-                "modelos_alternativos": estado.get("modelos_alternativos", []),
                 "solucion": "Espera hasta mañana para el reset de cuota, o usa una nueva API key"
             }
         )
@@ -103,8 +100,9 @@ async def status_endpoint():
 @app.post("/api/fetch-images")
 async def fetch_images_options(request: ImageRequest):
     """Paso 1: Busca opciones y se las muestra al usuario en Excel"""
+    # Usamos título y SKU para la búsqueda robusta
     termino = f"{request.titulo} {request.sku}"
-    opciones_urls = buscar_imagen(termino)  
+    opciones_urls = buscar_imagen(termino)
     
     if not opciones_urls:
         raise HTTPException(status_code=404, detail="No se encontraron imágenes para este producto.")
@@ -113,10 +111,15 @@ async def fetch_images_options(request: ImageRequest):
 
 @app.post("/api/download-selected-image")
 async def download_selected(request: SeleccionImagenRequest):
-    """Paso 2: Descarga la imagen que el usuario eligió y la guarda a 500x500"""
+    """Paso 2: Descarga la imagen elegida y la guarda en BASE/HOJA/CATEGORIA/SKU.jpg"""
     try:
-        # CORRECCIÓN 3: Ajustado para usar el nombre correcto y pasar la categoría
-        resultado = procesar_imagen_estandar(request.url_imagen, request.sku, request.categoria)
+        # CORRECCIÓN AQUÍ: Se cambió 'nombre_ho_ja' por 'nombre_hoja'
+        resultado = procesar_imagen_estandar(
+            request.url_imagen, 
+            request.sku, 
+            request.categoria,
+            request.nombre_hoja # <--- El atributo correcto es nombre_hoja
+        )
         
         if resultado["estado"] == "OK":
             return {"mensaje": "Imagen procesada y guardada con éxito", "ruta": resultado["ruta"]}
@@ -124,16 +127,16 @@ async def download_selected(request: SeleccionImagenRequest):
             raise HTTPException(status_code=500, detail=resultado["mensaje"])
             
     except Exception as e:
+        # Esto te ayudará a ver errores más claros en la consola
+        print(f"Error detallado: {e}")
         raise HTTPException(status_code=500, detail=f"Error al procesar la imagen elegida: {str(e)}")
 
 
 # === ARRANQUE DEL SERVIDOR ===
 if __name__ == "__main__":
-    # Rutas a los certificados generados por Office
     cert_path = r"C:\Users\Edgar\.office-addin-dev-certs\localhost.crt"
     key_path = r"C:\Users\Edgar\.office-addin-dev-certs\localhost.key"
 
-    # Si los certificados existen, levantamos el servidor en HTTPS
     if os.path.exists(cert_path) and os.path.exists(key_path):
         print("🔒 Iniciando servidor de FastAPI con HTTPS...")
         uvicorn.run(app, host="0.0.0.0", port=8000, ssl_certfile=cert_path, ssl_keyfile=key_path)

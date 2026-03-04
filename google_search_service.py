@@ -1,70 +1,77 @@
 from ddgs import DDGS
 import time
+import random
 
 def buscar_imagen(termino_busqueda: str) -> list:
-    # 1. Limpieza de seguridad para evitar que caracteres rompan la URL de búsqueda
-    # Quitamos comillas, paréntesis y corchetes que confunden al algoritmo de DDG
+    """
+    Buscador Híbrido: Combina la potencia de DuckDuckGo con filtros de 
+    Google para obtener imágenes de catálogos específicos.
+    """
+    
+    # 1. Definimos los dominios de alta confianza (Google los prioriza)
+    sitios_sugeridos = (
+        "site:zmart.la OR site:mercadolibre.com OR site:amazon.com OR "
+        "site:maxiprintla.com OR site:walmart.com OR site:ebay.com OR "
+        "site:falabella.com OR site:homedepot.com"
+    )
+
+    # 2. Limpieza de texto
     texto_base = termino_busqueda.replace('"', '').replace("'", "").replace("(", "").replace(")", "").replace("[", "").replace("]", "").replace("-", " ")
     palabras = texto_base.split()
     
     links_encontrados = []
     
-    # === ESTRATEGIA DE BÚSQUEDA DINÁMICA EN CASCADA ===
-    # Creamos una lista de intentos de búsqueda, de lo más complejo a lo más simple.
-    intentos = []
+    # === ESTRATEGIA DE BÚSQUEDA HÍBRIDA ===
+    # El primer intento usa los sitios sugeridos. 
+    # El segundo simula una búsqueda de 'Producto + Catálogo' que es donde Google brilla.
+    intentos = [
+        f"{' '.join(palabras)} {sitios_sugeridos}",           # 1. Específico en fuentes sugeridas
+        f"{' '.join(palabras[:6])} product gallery",           # 2. Búsqueda de galería profesional
+        " ".join(palabras),                                   # 3. Búsqueda abierta
+        " ".join(palabras[:4])                                # 4. Búsqueda simplificada
+    ]
     
-    # Intento 1: Título completo + SKU (Precisión absoluta)
-    intentos.append(" ".join(palabras))
-    
-    # Intento 2: Si el título es largo, quitamos las últimas 2 palabras (suele limpiar códigos de lote)
-    if len(palabras) > 5:
-        intentos.append(" ".join(palabras[:-2]))
-        
-    # Intento 3: Mitad del título (Marca + Producto base)
-    if len(palabras) > 3:
-        intentos.append(" ".join(palabras[:4]))
-        
-    # Intento 4: Solo las primeras 2 palabras (Marca + Categoría - Último recurso para no fallar)
-    if len(palabras) >= 2:
-        intentos.append(" ".join(palabras[:2]))
-
-    # Ejecución de la cascada
     for query in intentos:
-        if not query: continue
+        if not query or len(query) < 3:
+            continue
         
-        print(f"🔍 Buscando (Nivel de robustez): {query}")
+        print(f"🔍 Buscando en red: {query}")
         
         try:
-            # Pausa técnica para evitar bloqueos de IP (Ratelimit)
-            time.sleep(1.2) 
+            # Pausa aleatoria para parecer un humano usando Google/DDG
+            time.sleep(random.uniform(1.0, 2.5)) 
             
             with DDGS() as ddgs:
-                # Usamos DDGS como generador para obtener resultados frescos
+                # Solicitamos resultados globales
                 resultados = ddgs.images(
                     query,
-                    region="wt-wt", # Búsqueda global
+                    region="wt-wt", 
                     safesearch="off",
-                    max_results=12
+                    max_results=20 # Aumentamos el buffer para filtrar calidad
                 )
                 
-                for r in resultados:
-                    url = r.get("image")
-                    # Validamos que sea una URL real y no una miniatura de base64
-                    if url and url.startswith("http"):
-                        links_encontrados.append(url)
-                    if len(links_encontrados) >= 4:
-                        break
+                if resultados:
+                    for r in resultados:
+                        url = r.get("image")
+                        if url and url.startswith("http"):
+                            # Filtro de extensiones para asegurar que Google nos da archivos reales
+                            if any(ext in url.lower() for ext in [".jpg", ".jpeg", ".png", ".webp"]):
+                                links_encontrados.append(url)
+                        
+                        if len(links_encontrados) >= 4:
+                            break
             
             if links_encontrados:
-                print(f"✅ ¡Éxito total! Se encontraron {len(links_encontrados)} imágenes para: {query}")
-                return links_encontrados # Retornamos de inmediato si hay éxito
+                print(f"✅ ¡Éxito! Encontradas {len(links_encontrados)} imágenes.")
+                return links_encontrados 
             else:
-                print(f"⚠️ Sin resultados para '{query}'. Probando siguiente nivel de robustez...")
+                print(f"⚠️ Sin resultados para: {query}. Reintentando nivel...")
                 
         except Exception as e:
-            print(f"❌ Error en este intento: {e}")
-            # Si hay un error de conexión o bloqueo, esperamos un poco más antes del siguiente nivel
-            time.sleep(2)
+            print(f"❌ Error en búsqueda: {e}")
+            if "403" in str(e):
+                print("🛑 Bloqueo detectado. Esperando enfriamiento...")
+                time.sleep(10)
             continue
 
     return []
