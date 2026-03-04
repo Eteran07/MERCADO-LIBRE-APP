@@ -2,57 +2,69 @@ from ddgs import DDGS
 import time
 
 def buscar_imagen(termino_busqueda: str) -> list:
-    # 1. Limpieza de caracteres para no confundir al buscador
-    limpio = termino_busqueda.replace('"', '').replace("'", "").replace("(", "").replace(")", "").replace("-", " ")
-    palabras = limpio.split()
-    
-    # Extraemos el SKU del término (normalmente lo enviamos al final del título en el main.py)
-    # Pero para asegurar, haremos una búsqueda combinada.
+    # 1. Limpieza de seguridad para evitar que caracteres rompan la URL de búsqueda
+    # Quitamos comillas, paréntesis y corchetes que confunden al algoritmo de DDG
+    texto_base = termino_busqueda.replace('"', '').replace("'", "").replace("(", "").replace(")", "").replace("[", "").replace("]", "").replace("-", " ")
+    palabras = texto_base.split()
     
     links_encontrados = []
     
-    # === ESTRATEGIA DE BÚSQUEDA BLINDADA (4 NIVELES) ===
-    intentos = [
-        " ".join(palabras),           # Nivel 1: Título completo + SKU (Máxima precisión)
-        " ".join(palabras[-3:]),      # Nivel 2: Solo las últimas palabras (Donde suele estar el SKU/Modelo)
-        " ".join(palabras[:4]),       # Nivel 3: Solo el inicio (Marca y Producto)
-        palabras[0] if palabras else None # Nivel 4: Palabra clave principal (Último recurso)
-    ]
+    # === ESTRATEGIA DE BÚSQUEDA DINÁMICA EN CASCADA ===
+    # Creamos una lista de intentos de búsqueda, de lo más complejo a lo más simple.
+    intentos = []
     
-    for query in intentos:
-        if not query or len(query) < 3: continue
+    # Intento 1: Título completo + SKU (Precisión absoluta)
+    intentos.append(" ".join(palabras))
+    
+    # Intento 2: Si el título es largo, quitamos las últimas 2 palabras (suele limpiar códigos de lote)
+    if len(palabras) > 5:
+        intentos.append(" ".join(palabras[:-2]))
         
-        print(f"🔍 Probando búsqueda nivel: {query}")
+    # Intento 3: Mitad del título (Marca + Producto base)
+    if len(palabras) > 3:
+        intentos.append(" ".join(palabras[:4]))
+        
+    # Intento 4: Solo las primeras 2 palabras (Marca + Categoría - Último recurso para no fallar)
+    if len(palabras) >= 2:
+        intentos.append(" ".join(palabras[:2]))
+
+    # Ejecución de la cascada
+    for query in intentos:
+        if not query: continue
+        
+        print(f"🔍 Buscando (Nivel de robustez): {query}")
         
         try:
-            time.sleep(1.5) # Pausa para evitar bloqueos
+            # Pausa técnica para evitar bloqueos de IP (Ratelimit)
+            time.sleep(1.2) 
             
             with DDGS() as ddgs:
+                # Usamos DDGS como generador para obtener resultados frescos
                 resultados = ddgs.images(
                     query,
-                    region="wt-wt", 
+                    region="wt-wt", # Búsqueda global
                     safesearch="off",
-                    max_results=10
+                    max_results=12
                 )
                 
                 for r in resultados:
                     url = r.get("image")
+                    # Validamos que sea una URL real y no una miniatura de base64
                     if url and url.startswith("http"):
                         links_encontrados.append(url)
                     if len(links_encontrados) >= 4:
                         break
             
             if links_encontrados:
-                print(f"✅ ¡Encontrado! {len(links_encontrados)} imágenes con: {query}")
-                return links_encontrados 
+                print(f"✅ ¡Éxito total! Se encontraron {len(links_encontrados)} imágenes para: {query}")
+                return links_encontrados # Retornamos de inmediato si hay éxito
             else:
-                print(f"⚠️ Sin resultados para: {query}. Bajando nivel de precisión...")
+                print(f"⚠️ Sin resultados para '{query}'. Probando siguiente nivel de robustez...")
                 
         except Exception as e:
-            print(f"❌ Error en intento: {e}")
-            if "403" in str(e):
-                print("🛑 Bloqueo temporal de DuckDuckGo. Esperando...")
-                time.sleep(5)
+            print(f"❌ Error en este intento: {e}")
+            # Si hay un error de conexión o bloqueo, esperamos un poco más antes del siguiente nivel
+            time.sleep(2)
             continue
 
     return []
