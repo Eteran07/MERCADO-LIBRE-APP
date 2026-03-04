@@ -1,6 +1,10 @@
 import React, { useState } from "react";
-// Importamos las nuevas funciones
-import { getMultipleSmartRowsData, writeApprovedSmartData, fetchImageOptionsFromExcel, downloadSelectedImageFinal } from "../../services/excelService";
+import { 
+  getMultipleSmartRowsData, 
+  writeApprovedSmartData, 
+  fetchImageOptionsFromExcel, 
+  downloadSelectedImageFinal 
+} from "../../services/excelService";
 import { fetchOptimization, fetchSmartEditBulk } from "../../services/apiService";
 import "./AssistantPanel.css"; 
 
@@ -15,11 +19,13 @@ export const AssistantPanel: React.FC = () => {
   const [selectedResultIds, setSelectedResultIds] = useState<Set<number>>(new Set());
   const [headerMapRef, setHeaderMapRef] = useState<Record<string, number>>({});
 
-  // === ESTADOS PARA LA GALERÍA DE IMÁGENES (ESTO ES LO QUE TE FALTABA) ===
+  // === ESTADOS PARA LA COLA DE IMÁGENES MASIVA ===
   const [imageOptions, setImageOptions] = useState<string[]>([]);
   const [imageContext, setImageContext] = useState<any>(null);
+  const [imageQueue, setImageQueue] = useState<any[]>([]);
+  const [currentQueueIndex, setCurrentQueueIndex] = useState<number>(-1);
 
-  // === MODO CLÁSICO MASIVO ===
+  // === MODO CLÁSICO MASIVO (TEXTO) ===
   const handleOptimizeBulk = async () => { 
     try {
       setLoading(true); setStatus("Leyendo selección...");
@@ -58,21 +64,17 @@ export const AssistantPanel: React.FC = () => {
     } catch (error: any) { setStatus(`Error: ${error.message}`); } finally { setLoading(false); }
   };
 
-  // === MODO CHAT LOTE MASIVO ===
+  // === MODO CHAT LOTE MASIVO (TEXTO) ===
   const handleSmartEditBulk = async () => {
     if (!chatCommand.trim()) { setStatus("Por favor, escribe una instrucción."); return; }
-
     try {
       setLoading(true); setStatus("Leyendo toda la selección...");
       const { rowsData, headerColMap } = await getMultipleSmartRowsData();
       if (rowsData.length === 0) { setStatus("No hay datos."); setLoading(false); return; }
-
       setHeaderMapRef(headerColMap);
       const loteParaIA = rowsData.map((row, index) => ({ id_fila: index, datos: row.datos_fila }));
-
       setStatus(`Enviando ${rowsData.length} filas a Gemini...`);
       const response = await fetchSmartEditBulk(loteParaIA, chatCommand);
-      
       const results: any[] = [];
       if (response.resultados) {
         response.resultados.forEach((res: any) => {
@@ -82,7 +84,6 @@ export const AssistantPanel: React.FC = () => {
            }
         });
       }
-
       setBulkResults(results);
       setSelectedResultIds(new Set(results.map(r => r.id)));
       setStatus(`¡Procesamiento masivo completado!`);
@@ -99,24 +100,55 @@ export const AssistantPanel: React.FC = () => {
     } catch (error) { setStatus("Error al escribir los cambios."); }
   };
 
-  const toggleSelection = (id: number) => {
-    const newSet = new Set(selectedResultIds);
-    if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
-    setSelectedResultIds(newSet);
-  };
+  // === LÓGICA DE BÚSQUEDA MASIVA DE IMÁGENES ===
+  
+  const processNextImageInQueue = async (queue: any[], index: number) => {
+    if (index >= queue.length) {
+      setStatus("✅ ¡Proceso de imágenes finalizado!");
+      setImageQueue([]);
+      setCurrentQueueIndex(-1);
+      setImageOptions([]);
+      setImageContext(null);
+      return;
+    }
 
-  // === NUEVA LÓGICA DE GALERÍA DE IMÁGENES ===
-  const handleSearchImagesClick = async () => {
+    setCurrentQueueIndex(index);
+    setLoading(true);
+    const row = queue[index];
+    setStatus(`Buscando imágenes para Fila ${row.rowIndex + 1}...`);
+
     try {
-      setLoading(true);
-      setStatus("Buscando 4 opciones en la web...");
-      const result = await fetchImageOptionsFromExcel();
+      // Pasamos la fila específica a la función del servicio
+      const result = await fetchImageOptionsFromExcel(row);
       setImageOptions(result.opciones);
       setImageContext(result.contexto);
-      setStatus("¡Listo! Haz clic en la imagen que deseas descargar.");
+      setStatus(`Fila ${index + 1}/${queue.length}: Elige una imagen.`);
+    } catch (error: any) {
+      console.error("Error buscando imágenes:", error);
+      setStatus(`Error en fila ${row.rowIndex + 1}. Saltando...`);
+      await delay(1000);
+      await processNextImageInQueue(queue, index + 1);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStartImageBulk = async () => {
+    try {
+      setLoading(true);
+      setStatus("Obteniendo selección para imágenes...");
+      const { rowsData } = await getMultipleSmartRowsData();
+      
+      if (rowsData.length === 0) {
+        setStatus("No hay filas seleccionadas.");
+        setLoading(false);
+        return;
+      }
+
+      setImageQueue(rowsData);
+      await processNextImageInQueue(rowsData, 0);
     } catch (error: any) {
       setStatus(`Error: ${error.message}`);
-    } finally {
       setLoading(false);
     }
   };
@@ -125,25 +157,91 @@ export const AssistantPanel: React.FC = () => {
     if (!imageContext) return;
     try {
       setLoading(true);
-      setStatus("Procesando y guardando imagen a 500x500...");
-      const result = await downloadSelectedImageFinal(url, imageContext.sku, imageContext.categoria);
-      setStatus(`¡Éxito! Guardada en: ${result.ruta}`);
-      // Limpiamos la galería para la próxima búsqueda
-      setImageOptions([]);
-      setImageContext(null);
+      setStatus(`Guardando imagen para SKU ${imageContext.sku}...`);
+      await downloadSelectedImageFinal(url, imageContext.sku, imageContext.categoria);
+      
+      // Una vez guardada, procesamos la siguiente automáticamente
+      await processNextImageInQueue(imageQueue, currentQueueIndex + 1);
     } catch (error: any) {
-      setStatus(`Error al descargar: ${error.message}`);
-    } finally {
+      setStatus(`Error al procesar: ${error.message}`);
       setLoading(false);
     }
+  };
+
+  const skipCurrentImage = async () => {
+    await processNextImageInQueue(imageQueue, currentQueueIndex + 1);
   };
 
   return (
     <div className="assistant-container">
       <h2>Asistente Mercado Libre</h2>
-      <p className="status-text">{status}</p>
+      <p className="status-text" style={{ fontWeight: 'bold' }}>{status}</p>
       
-      <button className="primary-btn" onClick={handleOptimizeBulk} disabled={loading} style={{ marginBottom: "15px" }}>
+      {/* SECCIÓN DE IMÁGENES (MASIVA) */}
+      <div className="image-section" style={{ border: "2px solid #107c41", padding: "10px", borderRadius: "8px", marginBottom: "15px" }}>
+        <h3>📷 Buscador Masivo de Fotos</h3>
+        
+        {imageQueue.length > 0 && (
+          <div style={{ marginBottom: "10px", fontSize: "0.85em", color: "#107c41" }}>
+            Progreso: <strong>{currentQueueIndex + 1} de {imageQueue.length}</strong>
+            <div style={{ width: '100%', backgroundColor: '#eee', height: '4px', marginTop: '4px' }}>
+              <div style={{ 
+                width: `${((currentQueueIndex + 1) / imageQueue.length) * 100}%`, 
+                backgroundColor: '#107c41', 
+                height: '100%',
+                transition: 'width 0.3s'
+              }}></div>
+            </div>
+          </div>
+        )}
+
+        {imageOptions.length === 0 ? (
+          <button 
+            className="primary-btn" 
+            onClick={handleStartImageBulk} 
+            disabled={loading}
+            style={{ width: "100%", backgroundColor: "#107c41" }}
+          >
+            {loading ? "Cargando..." : "Iniciar Búsqueda en Selección"}
+          </button>
+        ) : (
+          <div style={{ backgroundColor: "#f0f8ff", padding: "10px", borderRadius: "5px" }}>
+             <p style={{ fontSize: "0.8em", marginBottom: "5px" }}>
+               Fila actual: <strong>{imageContext?.rowIndex + 1}</strong> - SKU: <strong>{imageContext?.sku}</strong>
+             </p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+              {imageOptions.map((url, idx) => (
+                <div 
+                  key={idx} 
+                  onClick={() => handleSelectImage(url)}
+                  style={{ border: "2px solid #ccc", cursor: "pointer", borderRadius: "5px", overflow: "hidden", backgroundColor: "white" }}
+                >
+                  <img src={url} alt="opcion" style={{ width: "100%", height: "80px", objectFit: "contain" }} />
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: '5px', marginTop: '10px' }}>
+              <button 
+                onClick={skipCurrentImage} 
+                style={{ flex: 1, padding: "5px", fontSize: "0.8em", cursor: "pointer" }}
+              >
+                Saltar ➔
+              </button>
+              <button 
+                onClick={() => { setImageQueue([]); setImageOptions([]); setStatus("Proceso cancelado."); }} 
+                style={{ flex: 1, padding: "5px", fontSize: "0.8em", backgroundColor: "#d83b01", color: "white", border: "none", cursor: "pointer" }}
+              >
+                Cancelar Todo
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <hr />
+
+      {/* BOTONES DE OPTIMIZACIÓN DE TEXTO */}
+      <button className="primary-btn" onClick={handleOptimizeBulk} disabled={loading} style={{ marginBottom: "15px", width: "100%" }}>
         {loading ? "Procesando..." : "Optimizar Títulos Seleccionados"}
       </button>
 
@@ -156,77 +254,34 @@ export const AssistantPanel: React.FC = () => {
           rows={3}
           style={{ width: "100%", marginBottom: "10px", padding: "5px" }}
         />
-        <button className="primary-btn" onClick={handleSmartEditBulk} disabled={loading || !chatCommand}>
-          {loading ? "Analizando lote..." : "Ejecutar en Selección"}
+        <button className="primary-btn" onClick={handleSmartEditBulk} disabled={loading || !chatCommand} style={{ width: "100%" }}>
+          {loading ? "Analizando lote..." : "Ejecutar IA en Selección"}
         </button>
       </div>
 
-      {/* === GALERÍA VISUAL DE IMÁGENES === */}
-      <div className="image-section" style={{ borderTop: "1px solid #ccc", paddingTop: "15px", marginTop: "15px" }}>
-        <h3>Imágenes Automáticas</h3>
-        
-        {imageOptions.length === 0 ? (
-          <>
-            <p style={{ fontSize: "0.85em", color: "#666", marginBottom: "10px" }}>
-              Busca 4 opciones de fotos basadas en el Título y SKU.
-            </p>
-            <button 
-              className="primary-btn" 
-              onClick={handleSearchImagesClick} 
-              disabled={loading} 
-              style={{ width: "100%", backgroundColor: "#107c41", borderColor: "#107c41" }}
-            >
-              {loading ? "Buscando opciones..." : "Buscar Opciones de Imagen"}
-            </button>
-          </>
-        ) : (
-          <div style={{ backgroundColor: "#f0f8ff", padding: "10px", borderRadius: "5px" }}>
-            <p style={{ fontSize: "0.85em", fontWeight: "bold", marginBottom: "8px", color: "#005a9e" }}>
-              Elige una imagen para procesar:
-            </p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "10px" }}>
-              {imageOptions.map((url, idx) => (
-                <div 
-                  key={idx} 
-                  onClick={() => handleSelectImage(url)}
-                  style={{ border: "2px solid #ccc", cursor: "pointer", borderRadius: "5px", overflow: "hidden", backgroundColor: "white" }}
-                  title="Haz clic para descargar y procesar"
-                >
-                  <img src={url} alt={`Opcion ${idx}`} style={{ width: "100%", height: "100px", objectFit: "contain" }} />
-                </div>
-              ))}
-            </div>
-            <button 
-              onClick={() => {setImageOptions([]); setImageContext(null); setStatus("Búsqueda cancelada.");}} 
-              style={{ width: "100%", padding: "6px", backgroundColor: "#d83b01", color: "white", border: "none", borderRadius: "3px", cursor: "pointer", fontWeight: "bold", marginTop: "10px" }}
-            >
-              Cancelar / Buscar Otra Vez
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* === RESULTADOS MASIVOS === */}
+      {/* RESULTADOS DE TEXTO */}
       {bulkResults.length > 0 && (
         <div className="bulk-results-card" style={{ marginTop: "15px", padding: "10px", backgroundColor: "#f9f9f9", borderRadius: "5px", border: "1px solid #ddd" }}>
-          <h3 style={{ margin: "0 0 10px 0" }}>Cambios Propuestos</h3>
-          <div style={{ maxHeight: "300px", overflowY: "auto", marginBottom: "15px" }}>
+          <h3 style={{ margin: "0 0 10px 0" }}>Cambios de Texto Propuestos</h3>
+          <div style={{ maxHeight: "250px", overflowY: "auto", marginBottom: "15px" }}>
             {bulkResults.map((res) => (
               <div key={res.id} style={{ display: "flex", alignItems: "flex-start", marginBottom: "10px", borderBottom: "1px solid #eee", paddingBottom: "5px" }}>
-                <input type="checkbox" checked={selectedResultIds.has(res.id)} onChange={() => toggleSelection(res.id)} style={{ marginTop: "4px", marginRight: "10px", cursor: "pointer" }}/>
-                <div style={{ flex: 1, cursor: "pointer" }} onClick={() => toggleSelection(res.id)}>
-                  <strong style={{ display: "block", fontSize: "0.9em", color: "#0078d4" }}>Fila: {res.rowIndex + 1}</strong>
-                  {Object.entries(res.datos_actualizados).map(([columna, valor]) => (
-                    <div key={columna} style={{ fontSize: "0.85em", marginTop: "2px" }}>
-                      <strong>{columna}:</strong> <span style={{ color: "#333" }}>{String(valor)}</span>
-                    </div>
+                <input type="checkbox" checked={selectedResultIds.has(res.id)} onChange={() => {
+                  const newSet = new Set(selectedResultIds);
+                  if (newSet.has(res.id)) newSet.delete(res.id); else newSet.add(res.id);
+                  setSelectedResultIds(newSet);
+                }} />
+                <div style={{ flex: 1, marginLeft: "10px" }}>
+                  <strong style={{ fontSize: "0.85em" }}>Fila: {res.rowIndex + 1}</strong>
+                  {Object.entries(res.datos_actualizados).map(([col, val]) => (
+                    <div key={col} style={{ fontSize: "0.8em" }}><strong>{col}:</strong> {String(val)}</div>
                   ))}
                 </div>
               </div>
             ))}
           </div>
           <button className="success-btn" onClick={handleApplyApproved} disabled={selectedResultIds.size === 0} style={{ width: "100%", backgroundColor: "#ffc107", color: "#000", fontWeight: "bold" }}>
-            Aplicar Seleccionados
+            Aplicar Cambios de Texto
           </button>
         </div>
       )}

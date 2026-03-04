@@ -261,34 +261,51 @@ export async function writeApprovedSmartData(approvedChanges: any[], headerColMa
 // ==========================================
 // NUEVAS FUNCIONES DE GALERÍA DE IMÁGENES
 // ==========================================
-export async function fetchImageOptionsFromExcel() {
-  const { rowsData, headerColMap } = await getMultipleSmartRowsData(); 
-  if (rowsData.length === 0) throw new Error("Selecciona una fila primero.");
-  
-  const datos_fila = rowsData[0].datos_fila;
-  
-  const skuKey = Object.keys(headerColMap).find(k => k.toLowerCase().includes('sku'));
-  const titleKey = Object.keys(headerColMap).find(k => k.toLowerCase().includes('título') || k.toLowerCase().includes('titulo'));
-  const categoryKey = Object.keys(headerColMap).find(k => k.toLowerCase().includes('categoría') || k.toLowerCase().includes('categoria'));
+export async function fetchImageOptionsFromExcel(specificRow?: any) {
+  let rowToProcess;
+  let sku, title, categoria;
 
-  const sku = skuKey ? datos_fila[skuKey] : "SIN_SKU";
-  const title = titleKey ? datos_fila[titleKey] : "SIN_TITULO";
-  const categoria = categoryKey ? datos_fila[categoryKey] : "General";
+  if (specificRow) {
+    // Si viene de la automatización masiva
+    rowToProcess = specificRow;
+    const d = rowToProcess.datos_fila;
+    // Buscamos las llaves dinámicamente
+    const skuKey = Object.keys(d).find(k => k.toLowerCase().includes('sku')) || "";
+    const titleKey = Object.keys(d).find(k => k.toLowerCase().includes('título') || k.toLowerCase().includes('titulo')) || "";
+    const catKey = Object.keys(d).find(k => k.toLowerCase().includes('categoría') || k.toLowerCase().includes('categoria')) || "";
+
+    sku = d[skuKey] || "SIN_SKU";
+    title = d[titleKey] || "SIN_TITULO";
+    categoria = d[catKey] || "General";
+  } else {
+    // Comportamiento original para una sola fila
+    const { rowsData, headerColMap } = await getMultipleSmartRowsData(); 
+    if (rowsData.length === 0) throw new Error("Selecciona al menos una fila.");
+    rowToProcess = rowsData[0];
+    const datos_fila = rowToProcess.datos_fila;
+    
+    const skuKey = Object.keys(headerColMap).find(k => k.toLowerCase().includes('sku')) || "";
+    const titleKey = Object.keys(headerColMap).find(k => k.toLowerCase().includes('título')) || "";
+    const categoryKey = Object.keys(headerColMap).find(k => k.toLowerCase().includes('categoría')) || "";
+
+    sku = skuKey ? datos_fila[skuKey] : "SIN_SKU";
+    title = titleKey ? datos_fila[titleKey] : "SIN_TITULO";
+    categoria = categoryKey ? datos_fila[categoryKey] : "General";
+  }
 
   const response = await fetch("https://localhost:8000/api/fetch-images", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sku: sku, titulo: title, categoria: categoria })
+    body: JSON.stringify({ sku, titulo: title, categoria })
   });
 
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.detail || "Error al buscar imágenes");
-  }
+  if (!response.ok) throw new Error("Error al buscar imágenes");
 
   const result = await response.json();
-  // Devolvemos los 4 links y los datos de la fila para no perderlos
-  return { opciones: result.opciones, contexto: { sku, titulo: title, categoria } };
+  return { 
+    opciones: result.opciones, 
+    contexto: { sku, titulo: title, categoria, rowIndex: rowToProcess.rowIndex } 
+  };
 }
 
 export async function downloadSelectedImageFinal(url_imagen: string, sku: string, categoria: string) {
