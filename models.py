@@ -1,5 +1,12 @@
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
+# models.py
+from pydantic import BaseModel
+
+class ImageFetchRequest(BaseModel):
+    sku: str
+    titulo: str
+    categoria: str
 
 # Modelo para el botón de Optimizar Título/Desc
 class ListingRequest(BaseModel):

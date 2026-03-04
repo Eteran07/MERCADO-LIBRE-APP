@@ -1,5 +1,7 @@
 /* global Excel */
 
+
+
 export async function getSelectedRowData() {
   return Excel.run(async (context) => {
     const sheet = context.workbook.worksheets.getActiveWorksheet();
@@ -226,6 +228,8 @@ export async function getMultipleSmartRowsData() {
   });
 }
 
+
+
 // ESCRIBIR SOLO LO APROBADO (CON LIMPIEZA EXTREMA)
 export async function writeApprovedSmartData(approvedChanges: any[], headerColMap: Record<string, number>) {
   return Excel.run(async (context) => {
@@ -249,4 +253,40 @@ export async function writeApprovedSmartData(approvedChanges: any[], headerColMa
     await context.sync();
   });
 }
+
+
+// ==========================================
+// NUEVA FUNCIÓN DE IMÁGENES (CORREGIDA TS6133)
+// ==========================================
+export async function downloadImagesForSelectedRows() {
+  // IMPORTANTE: Aquí usaremos getSmartRowData para tener todas las columnas
+  const { datos_fila } = await getSmartRowData(); 
+  
+  // Extraemos los datos basándonos en los nombres de tus columnas
+  const skuKey = Object.keys(datos_fila).find(k => k.toLowerCase().includes('sku'));
+  const titleKey = Object.keys(datos_fila).find(k => k.toLowerCase().includes('título') || k.toLowerCase().includes('titulo'));
+  const categoryKey = Object.keys(datos_fila).find(k => k.toLowerCase().includes('categoría') || k.toLowerCase().includes('categoria'));
+
+  const sku = skuKey ? datos_fila[skuKey] : "SIN_SKU";
+  const title = titleKey ? datos_fila[titleKey] : "SIN_TITULO";
+  const categoria = categoryKey ? datos_fila[categoryKey] : "General";
+
+  // Haces la petición a tu servidor FastAPI local
+  const response = await fetch("https://localhost:8000/api/fetch-images", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sku: sku,
+      titulo: title,
+      categoria: categoria
+    })
+  });
+
+  const result = await response.json();
+  console.log("Imagen guardada en: ", result.ruta_local);
+  // Podrías pintar la celda de verde en Excel para saber que la imagen ya se descargó
+}
+
+
+
 

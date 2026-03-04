@@ -1,10 +1,17 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+
+# Importaciones de tus servicios
 import gemini_service
+import image_service
+import google_search_service 
 
-# Importamos solo los modelos que existen actualmente en models.py
-from models import ListingRequest, ListingResponse, SmartBatchRequest, SmartBatchResponse
+# Importamos los modelos
+from models import ListingRequest, ListingResponse, SmartBatchRequest, SmartBatchResponse, ImageFetchRequest
 
+# ========================================================
+# 1. PRIMERO DEFINIMOS LA APLICACIÓN (Esto soluciona el error)
+# ========================================================
 app = FastAPI(title="ML Excel Assistant API")
 
 # Habilitar CORS para que el Add-in de Excel (Frontend) pueda comunicarse
@@ -72,6 +79,33 @@ async def status_endpoint():
         "mensaje": "API funcionando correctamente",
         "modelo": estado["modelo_principal"]
     }
+
+
+# === 4. NUEVA RUTA: DESCARGAR Y PROCESAR IMÁGENES ===
+@app.post("/api/fetch-images")
+async def fetch_images_endpoint(request: ImageFetchRequest):
+    try:
+        # 1. Buscamos la URL de la imagen en Google usando el nuevo servicio
+        termino = f"{request.titulo} {request.sku}"
+        url_encontrada = google_search_service.buscar_imagen(termino)
+        
+        if not url_encontrada:
+            raise HTTPException(status_code=404, detail="No se encontró imagen en Google para este producto")
+
+        # 2. Procesamos (500x500, fondo blanco) con Pillow SIN IA y guardamos
+        resultado = image_service.procesar_imagen_estandar(
+            url_imagen=url_encontrada,
+            sku=request.sku,
+            categoria=request.categoria
+        )
+        
+        if resultado["estado"] == "ERROR":
+             raise HTTPException(status_code=500, detail=resultado["mensaje"])
+             
+        return {"mensaje": "Imagen procesada exitosamente", "ruta_local": resultado["ruta"]}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # === ARRANQUE DEL SERVIDOR ===

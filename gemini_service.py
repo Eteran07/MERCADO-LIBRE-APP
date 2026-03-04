@@ -161,29 +161,42 @@ def procesar_fila_inteligente(datos_fila: dict, comando_usuario: str) -> dict:
     except Exception as e:
         return {"error": "Error de API de Gemini", "details": str(e)}
 
-def procesar_lote_inteligente(filas: list, comando_usuario: str) -> dict:
+def procesar_lote_inteligente(filas, comando_usuario):
     prompt = f"""
-    Eres un experto en bases de datos para Mercado Libre.
-    Tienes {len(filas)} productos. Cada uno tiene id_fila y datos.
-    
+    Procesa este lote de {len(filas)} productos para Mercado Libre.
+    Instrucción: "{comando_usuario}"
     Productos: {json.dumps(filas, ensure_ascii=False)}
-    Instruccion: {comando_usuario}
     
-    Devuelve un arreglo JSON con: [{{"id_fila": 0, "datos_actualizados": {{...}}}}]
+    Reglas:
+    1. Usa los mismos nombres de columnas que recibes.
+    2. Devuelve ÚNICAMENTE un ARREGLO JSON de objetos con "id_fila" y "datos_actualizados".
+    3. No inventes columnas, solo llena las que el usuario pida o falten.
+    4. NO digas "Hola" ni expliques nada. Solo devuelve el código.
     """
-    
     try:
+        # AQUÍ ESTÁ LA MAGIA: Usamos TU sistema de reintentos y modelos automáticos
         resultado = generar_con_reintentos(prompt)
-        raw_text = limpiar_json_response(resultado['response'].text)
         
-        print(f"\n=== RESPUESTA GEMINI ({len(filas)} FILAS) ===")
-        print(raw_text[:500] + "..." if len(raw_text) > 500 else raw_text)
-        print("========================================================\n")
+        # Usamos TU función de limpieza de backticks
+        texto = limpiar_json_response(resultado['response'].text)
         
-        return {"resultados": json.loads(raw_text), "_modelo_usado": resultado.get('modelo_usado', 'unknown')}
+        # FILTRO INTELIGENTE EXTRA: Buscar solo lo que está entre corchetes [ ]
+        inicio = texto.find('[')
+        fin = texto.rfind(']') + 1
+        
+        if inicio != -1 and fin != 0:
+            texto_limpio = texto[inicio:fin]
+        else:
+            texto_limpio = texto # Si no hay corchetes, intentamos con el texto normal
             
+        return {"resultados": json.loads(texto_limpio)}
+        
     except Exception as e:
-        return {"error": "Error de API de Gemini", "details": str(e)}
+        print("\n=== ERROR LEYENDO A GEMINI (LOTE MASIVO) ===")
+        print(f"Detalle: {str(e)}")
+        print("============================================\n")
+        
+        return {"error": f"La IA falló o la cuota se agotó: {str(e)}"}
 
 def verificar_estado_api() -> dict:
     try:

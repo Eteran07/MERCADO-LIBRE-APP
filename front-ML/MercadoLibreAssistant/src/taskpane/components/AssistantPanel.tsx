@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { getMultipleSmartRowsData, writeApprovedSmartData } from "../../services/excelService";
+// IMPORTANTE: Aquí agregamos downloadImagesForSelectedRows
+import { getMultipleSmartRowsData, writeApprovedSmartData, downloadImagesForSelectedRows } from "../../services/excelService";
 import { fetchOptimization, fetchSmartEditBulk } from "../../services/apiService";
 import "./AssistantPanel.css"; 
 
@@ -96,12 +97,6 @@ export const AssistantPanel: React.FC = () => {
     }
   };
 
-  const toggleSelection = (id: number) => {
-    const newSet = new Set(selectedResultIds);
-    if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
-    setSelectedResultIds(newSet);
-  };
-
   const handleApplyApproved = async () => {
     try {
       setStatus("Escribiendo cambios aprobados en Excel...");
@@ -110,6 +105,26 @@ export const AssistantPanel: React.FC = () => {
       setStatus(`¡${approvedChanges.length} filas actualizadas con éxito!`);
       setBulkResults([]); 
     } catch (error) { setStatus("Error al escribir los cambios."); }
+  };
+
+  const toggleSelection = (id: number) => {
+    const newSet = new Set(selectedResultIds);
+    if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
+    setSelectedResultIds(newSet);
+  };
+
+  // === NUEVO: MODO DESCARGA DE IMÁGENES ===
+  const handleDownloadImagesClick = async () => {
+    try {
+      setLoading(true);
+      setStatus("Buscando y procesando imágenes...");
+      await downloadImagesForSelectedRows();
+      setStatus("¡Imágenes descargadas y guardadas correctamente!");
+    } catch (error: any) {
+      setStatus(`Error en imágenes: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -135,6 +150,22 @@ export const AssistantPanel: React.FC = () => {
         />
         <button className="primary-btn" onClick={handleSmartEditBulk} disabled={loading || !chatCommand}>
           {loading ? "Analizando lote..." : "Ejecutar en Toda la Selección"}
+        </button>
+      </div>
+
+      {/* === NUEVA SECCIÓN DE IMÁGENES EN LA INTERFAZ === */}
+      <div className="image-section" style={{ borderTop: "1px solid #ccc", paddingTop: "15px", marginTop: "15px" }}>
+        <h3>Imágenes 500x500</h3>
+        <p style={{ fontSize: "0.85em", color: "#666", marginBottom: "10px" }}>
+          Descarga fotos con fondo blanco usando la fila seleccionada.
+        </p>
+        <button 
+          className="primary-btn" 
+          onClick={handleDownloadImagesClick} 
+          disabled={loading} 
+          style={{ width: "100%", backgroundColor: "#107c41", borderColor: "#107c41" }}
+        >
+          {loading ? "Descargando..." : "Buscar y Descargar Imagen"}
         </button>
       </div>
 
