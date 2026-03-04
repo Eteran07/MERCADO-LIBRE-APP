@@ -1,16 +1,34 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import os
+import uvicorn
 
 # Importaciones de tus servicios
 import gemini_service
-import image_service
-import google_search_service 
+from google_search_service import buscar_imagen
+# CORRECCIÓN 1: El nombre correcto de tu función
+from image_service import procesar_imagen_estandar
 
 # Importamos los modelos
 from models import ListingRequest, ListingResponse, SmartBatchRequest, SmartBatchResponse, ImageFetchRequest
 
+# ==========================================
+# NUEVOS MODELOS DE DATOS PARA IMÁGENES
+# ==========================================
+class ImageRequest(BaseModel):
+    sku: str
+    titulo: str
+    categoria: str
+
+class SeleccionImagenRequest(BaseModel):
+    url_imagen: str
+    sku: str
+    categoria: str # <-- CORRECCIÓN 2: Añadido para que la foto se guarde en la carpeta correcta
+
+
 # ========================================================
-# 1. PRIMERO DEFINIMOS LA APLICACIÓN (Esto soluciona el error)
+# 1. DEFINIMOS LA APLICACIÓN
 # ========================================================
 app = FastAPI(title="ML Excel Assistant API")
 
@@ -68,7 +86,7 @@ async def status_endpoint():
                 "estado": "CUOTA_AGOTADA",
                 "modelo_principal": estado["modelo_principal"],
                 "modelos_alternativos": estado.get("modelos_alternativos", []),
-                "solucion": "Espera hasta manana para el reset de cuota, o usa una nueva API key"
+                "solucion": "Espera hasta mañana para el reset de cuota, o usa una nueva API key"
             }
         )
     elif estado["estado"] == "ERROR":
@@ -81,38 +99,36 @@ async def status_endpoint():
     }
 
 
-# === 4. NUEVA RUTA: DESCARGAR Y PROCESAR IMÁGENES ===
+# === 4. RUTAS DE IMÁGENES (DuckDuckGo - 4 Opciones) ===
 @app.post("/api/fetch-images")
-async def fetch_images_endpoint(request: ImageFetchRequest):
-    try:
-        # 1. Buscamos la URL de la imagen en Google usando el nuevo servicio
-        termino = f"{request.titulo} {request.sku}"
-        url_encontrada = google_search_service.buscar_imagen(termino)
+async def fetch_images_options(request: ImageRequest):
+    """Paso 1: Busca opciones y se las muestra al usuario en Excel"""
+    termino = f"{request.titulo} {request.sku}"
+    opciones_urls = buscar_imagen(termino)
+    
+    if not opciones_urls:
+        raise HTTPException(status_code=404, detail="No se encontraron imágenes para este producto.")
         
-        if not url_encontrada:
-            raise HTTPException(status_code=404, detail="No se encontró imagen en Google para este producto")
+    return {"opciones": opciones_urls}
 
-        # 2. Procesamos (500x500, fondo blanco) con Pillow SIN IA y guardamos
-        resultado = image_service.procesar_imagen_estandar(
-            url_imagen=url_encontrada,
-            sku=request.sku,
-            categoria=request.categoria
-        )
+@app.post("/api/download-selected-image")
+async def download_selected(request: SeleccionImagenRequest):
+    """Paso 2: Descarga la imagen que el usuario eligió y la guarda a 500x500"""
+    try:
+        # CORRECCIÓN 3: Ajustado para usar el nombre correcto y pasar la categoría
+        resultado = procesar_imagen_estandar(request.url_imagen, request.sku, request.categoria)
         
-        if resultado["estado"] == "ERROR":
-             raise HTTPException(status_code=500, detail=resultado["mensaje"])
-             
-        return {"mensaje": "Imagen procesada exitosamente", "ruta_local": resultado["ruta"]}
-        
+        if resultado["estado"] == "OK":
+            return {"mensaje": "Imagen procesada y guardada con éxito", "ruta": resultado["ruta"]}
+        else:
+            raise HTTPException(status_code=500, detail=resultado["mensaje"])
+            
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Error al procesar la imagen elegida: {str(e)}")
 
 
 # === ARRANQUE DEL SERVIDOR ===
 if __name__ == "__main__":
-    import uvicorn
-    import os
-
     # Rutas a los certificados generados por Office
     cert_path = r"C:\Users\Edgar\.office-addin-dev-certs\localhost.crt"
     key_path = r"C:\Users\Edgar\.office-addin-dev-certs\localhost.key"

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 // IMPORTANTE: Aquí agregamos downloadImagesForSelectedRows
-import { getMultipleSmartRowsData, writeApprovedSmartData, downloadImagesForSelectedRows } from "../../services/excelService";
+import { getMultipleSmartRowsData, writeApprovedSmartData, fetchImageOptionsFromExcel } from "../../services/excelService";
 import { fetchOptimization, fetchSmartEditBulk } from "../../services/apiService";
 import "./AssistantPanel.css"; 
 
@@ -118,7 +118,7 @@ export const AssistantPanel: React.FC = () => {
     try {
       setLoading(true);
       setStatus("Buscando y procesando imágenes...");
-      await downloadImagesForSelectedRows();
+      await fetchImageOptionsFromExcel();
       setStatus("¡Imágenes descargadas y guardadas correctamente!");
     } catch (error: any) {
       setStatus(`Error en imágenes: ${error.message}`);
